@@ -1,0 +1,21 @@
+ # Virtual Environment
+news_env/
+
+# Model files
+bert_model/
+*.pt
+*.bin
+*.ckpt
+
+# Data files
+data/
+*.csv
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyd
+
+# OS files
+.DS_Store
+Thumbs.db
