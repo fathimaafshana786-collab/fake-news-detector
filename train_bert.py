@@ -1,36 +1,63 @@
 # ============================================
-# PHASE 3 - BERT Fine-tuning (Lighter Version)
+# IMPROVED BERT Training - Balanced Version
 # ============================================
 
-# Step 1: Import libraries
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
 from transformers import BertTokenizer, BertForSequenceClassification
 from torch.optim import AdamW
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, classification_report
 import os
 
 print("✅ Libraries imported!")
 
-# Step 2: Load cleaned data
+# Load cleaned data
 print("\nLoading cleaned dataset...")
 train_df = pd.read_csv("data/train_clean.csv")
 test_df  = pd.read_csv("data/test_clean.csv")
 
-# Use only 5000 samples to make it faster
-train_df = train_df.head(5000)
-test_df  = test_df.head(1000)
+# ============================================
+# IMPROVEMENT 1 — Balance the dataset
+# ============================================
+fake_train = train_df[train_df['label'] == 1]
+real_train = train_df[train_df['label'] == 0]
 
-print(f"Train samples : {len(train_df)}")
-print(f"Test samples  : {len(test_df)}")
+print(f"\nBefore balancing:")
+print(f"Fake samples : {len(fake_train)}")
+print(f"Real samples : {len(real_train)}")
 
-# Step 3: Load BERT Tokenizer
+# Take equal samples from both
+min_samples = min(len(fake_train), len(real_train))
+fake_train  = fake_train.sample(min_samples, random_state=42)
+real_train  = real_train.sample(min_samples, random_state=42)
+
+# Combine and shuffle
+train_df = pd.concat([fake_train, real_train])
+train_df = train_df.sample(frac=1, random_state=42).reset_index(drop=True)
+
+print(f"\nAfter balancing:")
+print(f"Fake samples : {len(fake_train)}")
+print(f"Real samples : {len(real_train)}")
+print(f"Total        : {len(train_df)}")
+
+# ============================================
+# IMPROVEMENT 2 — Use more data
+# ============================================
+# Use 10000 samples instead of 5000
+train_df = train_df.head(10000)
+test_df  = test_df.head(2000)
+
+print(f"\nFinal dataset:")
+print(f"Train : {len(train_df)}")
+print(f"Test  : {len(test_df)}")
+
+# Load tokenizer
 print("\nLoading BERT tokenizer...")
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 print("✅ Tokenizer loaded!")
 
-# Step 4: Create Dataset class
+# Dataset class
 class NewsDataset(Dataset):
     def __init__(self, df, tokenizer, max_length=128):
         self.df         = df
@@ -58,33 +85,33 @@ class NewsDataset(Dataset):
             'label'          : torch.tensor(label, dtype=torch.long)
         }
 
-# Step 5: Create DataLoaders
+# DataLoaders
 print("\nPreparing data loaders...")
 train_dataset = NewsDataset(train_df, tokenizer)
 test_dataset  = NewsDataset(test_df,  tokenizer)
 
 train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
 test_loader  = DataLoader(test_dataset,  batch_size=8, shuffle=False)
-
 print("✅ Data loaders ready!")
 
-# Step 6: Load BERT Model
+# Load BERT
 print("\nLoading BERT model...")
 model = BertForSequenceClassification.from_pretrained(
     "bert-base-uncased",
     num_labels = 2
 )
 
-# Step 7: Setup device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 model = model.to(device)
 print("✅ BERT model loaded!")
 
-# Step 8: Setup optimizer
-optimizer = AdamW(model.parameters(), lr=2e-5)
+# ============================================
+# IMPROVEMENT 3 — Better optimizer settings
+# ============================================
+optimizer = AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
 
-# Step 9: Training function
+# Training function
 def train_epoch(model, loader, optimizer, device):
     model.train()
     total_loss = 0
@@ -97,7 +124,6 @@ def train_epoch(model, loader, optimizer, device):
         labels         = batch['label'].to(device)
 
         optimizer.zero_grad()
-
         outputs = model(
             input_ids      = input_ids,
             attention_mask = attention_mask,
@@ -106,6 +132,12 @@ def train_epoch(model, loader, optimizer, device):
 
         loss = outputs.loss
         loss.backward()
+
+        # ============================================
+        # IMPROVEMENT 4 — Gradient clipping
+        # ============================================
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
         optimizer.step()
 
         total_loss += loss.item()
@@ -113,14 +145,14 @@ def train_epoch(model, loader, optimizer, device):
         all_preds.extend(preds.cpu().numpy())
         all_labels.extend(labels.cpu().numpy())
 
-        if batch_idx % 50 == 0:
+        if batch_idx % 100 == 0:
             print(f"  Batch {batch_idx}/{len(loader)} - Loss: {loss.item():.4f}")
 
     accuracy = accuracy_score(all_labels, all_preds)
     avg_loss = total_loss / len(loader)
     return avg_loss, accuracy
 
-# Step 10: Evaluation function
+# Evaluation function
 def evaluate(model, loader, device):
     model.eval()
     all_preds  = []
@@ -142,14 +174,25 @@ def evaluate(model, loader, device):
             all_labels.extend(labels.cpu().numpy())
 
     accuracy = accuracy_score(all_labels, all_preds)
-    f1       = f1_score(all_labels, all_preds)
-    return accuracy, f1
+    f1       = f1_score(all_labels, all_preds, average='weighted')
 
-# Step 11: Train the model
-print("\n🚀 Starting BERT Training...")
+    # ============================================
+    # IMPROVEMENT 5 — Detailed report
+    # ============================================
+    report = classification_report(
+        all_labels, all_preds,
+        target_names=['Real News', 'Fake News']
+    )
+    return accuracy, f1, report
+
+# ============================================
+# IMPROVEMENT 6 — Train for 2 epochs
+# ============================================
+print("\n🚀 Starting Improved BERT Training...")
 print("=" * 50)
 
-EPOCHS = 1
+EPOCHS = 2
+best_accuracy = 0
 
 for epoch in range(EPOCHS):
     print(f"\nEpoch {epoch+1}/{EPOCHS}")
@@ -162,17 +205,21 @@ for epoch in range(EPOCHS):
     print(f"\nTrain Loss     : {train_loss:.4f}")
     print(f"Train Accuracy : {train_acc:.4f}")
 
-    val_acc, val_f1 = evaluate(model, test_loader, device)
+    val_acc, val_f1, report = evaluate(model, test_loader, device)
     print(f"Test Accuracy  : {val_acc:.4f}")
     print(f"Test F1 Score  : {val_f1:.4f}")
+    print(f"\nDetailed Report:\n{report}")
+
+    # Save best model
+    if val_acc > best_accuracy:
+        best_accuracy = val_acc
+        print("💾 New best model! Saving...")
+        os.makedirs("bert_model", exist_ok=True)
+        model.save_pretrained("bert_model")
+        tokenizer.save_pretrained("bert_model")
+        print("✅ Best model saved!")
 
 print("\n" + "=" * 50)
-print("✅ Training Complete!")
-
-# Step 12: Save the model
-print("\nSaving model...")
-os.makedirs("bert_model", exist_ok=True)
-model.save_pretrained("bert_model")
-tokenizer.save_pretrained("bert_model")
-print("✅ Model saved to bert_model folder!")
-print("\n🎉 Phase 3 Complete!")
+print(f"🏆 Best Accuracy : {best_accuracy:.4f}")
+print("✅ Improved Training Complete!")
+print("🎉 Your model is now more balanced!")

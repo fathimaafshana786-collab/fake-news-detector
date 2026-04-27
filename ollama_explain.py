@@ -10,18 +10,26 @@ def explain_news(article, bert_verdict, bert_confidence):
     Returns explanation from LLaMA 3
     """
 
-    # Build the prompt
     prompt = f"""
 You are a professional fact-checking assistant.
+Today's date is April 27, 2026.
+You have knowledge of events up to early 2025.
 
-A BERT AI model has analyzed this news article and determined:
+A BERT AI model has analyzed this news article:
 - Verdict    : {"FAKE NEWS" if bert_verdict == 1 else "REAL NEWS"}
 - Confidence : {bert_confidence:.1%}
 
-Now YOU analyze this article and explain why it is fake or real.
+Important rules:
+- Do NOT flag something as fake just because
+  it mentions dates in 2025 or 2026
+- Do NOT flag simple factual statements as fake
+- Focus on logical inconsistencies and
+  misinformation patterns only
+- If BERT says REAL with high confidence
+  lean towards REAL unless clearly wrong
 
 Article:
-{article[:1000]}
+{text[:1000]}
 
 Respond in this exact format:
 VERDICT: [FAKE or REAL]
