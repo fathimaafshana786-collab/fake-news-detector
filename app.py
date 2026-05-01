@@ -96,7 +96,8 @@ st.markdown("---")
 # Input
 st.markdown("### 📰 Paste Your News Article")
 article = st.text_area(
-    label="",
+    label="Paste your article here",
+    label_visibility="collapsed",
     placeholder="Paste any news article or headline here...",
     height=180
 )

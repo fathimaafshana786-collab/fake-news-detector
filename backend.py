@@ -84,11 +84,7 @@ SUSPICIOUS PHRASES:
 
 # Step 5: Agreement logic function
 def get_final_verdict(bert_verdict, bert_confidence, llm_response):
-    """
-    Combines BERT + Gemma3 results
-    Returns final unified verdict
-    """
-    # Check what Gemma3 said
+    
     llm_response_upper = llm_response.upper()
 
     if "VERDICT: FAKE" in llm_response_upper:
@@ -106,10 +102,18 @@ def get_final_verdict(bert_verdict, bert_confidence, llm_response):
         else:
             final = "REAL NEWS ✅"
         agreement = "HIGH (Both BERT and AI agree!)"
+
     else:
-        # They disagree!
-        final     = "UNCERTAIN ⚠️"
-        agreement = "LOW (BERT and AI disagree - needs review)"
+        # They disagree → Trust Gemma3!
+        if llm_verdict == 0:
+            final = "REAL NEWS ✅"
+            agreement = "Gemma3 overrides → REAL"
+        elif llm_verdict == 1:
+            final = "FAKE NEWS ❌"
+            agreement = "Gemma3 overrides → FAKE"
+        else:
+            final = "UNCERTAIN ⚠️"
+            agreement = "LOW (needs review)"
 
     return final, agreement
 
